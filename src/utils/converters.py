@@ -94,14 +94,60 @@ def bytes_to_ascii(data: bytes) -> str:
     return ''.join(byte_to_ascii(b) for b in data)
 
 
-def numpy_to_qimage(array: np.ndarray, bit_depth: int = 8):
+def apply_histogram_mapping(array: np.ndarray, percentile_low: float = 0.1, percentile_high: float = 99.9) -> np.ndarray:
+    """应用直方图映射来增强图像对比度
+    
+    使用百分位数拉伸来映射图像值到0-255范围，这对于16位图像特别有用，
+    因为它们通常只使用全范围的一小部分。
+    
+    Args:
+        array: 输入图像数组
+        percentile_low: 低百分位数（默认0.1%），用于确定最小值
+        percentile_high: 高百分位数（默认99.9%），用于确定最大值
+        
+    Returns:
+        np.ndarray: 映射到0-255范围的uint8数组
+        
+    Example:
+        对于16位图像，如果实际值范围是1000-5000，而不是0-65535，
+        此函数会将1000映射到0，5000映射到255，从而显示清晰的图像。
+    """
+    # 处理空数组
+    if array.size == 0:
+        return array.astype(np.uint8)
+    
+    # 计算百分位数
+    vmin = np.percentile(array, percentile_low)
+    vmax = np.percentile(array, percentile_high)
+    
+    # 避免除以零
+    if vmax - vmin < 1e-10:
+        # 如果图像是常数，返回中间灰度值
+        return np.full(array.shape, 128, dtype=np.uint8)
+    
+    # 将数组转换为float进行计算
+    array_float = array.astype(np.float64)
+    
+    # 裁剪到百分位数范围
+    array_clipped = np.clip(array_float, vmin, vmax)
+    
+    # 归一化到0-255
+    array_normalized = (array_clipped - vmin) / (vmax - vmin) * 255.0
+    
+    # 转换为uint8
+    return array_normalized.astype(np.uint8)
+
+
+def numpy_to_qimage(array: np.ndarray, bit_depth: int = 8, use_histogram_mapping: bool = True):
     """将NumPy数组转换为QImage对象
     
-    支持8位和16位灰度图像。
+    支持8位和16位灰度图像。对于16位图像，默认使用直方图映射
+    来增强对比度，避免图像显示为全黑。
     
     Args:
         array: NumPy数组，形状为(height, width)
         bit_depth: 位深度，8或16
+        use_histogram_mapping: 是否使用直方图映射（推荐用于16位图像）
         
     Returns:
         QImage: Qt图像对象
@@ -109,6 +155,10 @@ def numpy_to_qimage(array: np.ndarray, bit_depth: int = 8):
     Raises:
         ValueError: 如果数组维度不正确或位深度无效
         ImportError: 如果PyQt5未安装
+        
+    Note:
+        16位图像通常只使用全范围(0-65535)的一小部分，例如1000-5000。
+        直方图映射会自动拉伸这个范围到0-255，使图像清晰可见。
     """
     try:
         from PyQt5.QtGui import QImage
@@ -127,25 +177,36 @@ def numpy_to_qimage(array: np.ndarray, bit_depth: int = 8):
     if bit_depth == 8:
         # 8位图像：确保数据类型为uint8
         if array.dtype != np.uint8:
-            # 归一化到0-255范围
-            array = array.astype(np.float64)
-            array = (array - array.min()) / (array.max() - array.min() + 1e-10) * 255
-            array = array.astype(np.uint8)
+            if use_histogram_mapping:
+                # 使用直方图映射
+                array_display = apply_histogram_mapping(array)
+            else:
+                # 简单归一化到0-255范围
+                array = array.astype(np.float64)
+                array = (array - array.min()) / (array.max() - array.min() + 1e-10) * 255
+                array_display = array.astype(np.uint8)
+        else:
+            array_display = array
         
         # 创建QImage（灰度格式）
         bytes_per_line = width
-        qimage = QImage(array.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
+        qimage = QImage(array_display.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
         
     else:  # 16位
         # 16位图像：转换为8位显示
         if array.dtype != np.uint16:
             array = array.astype(np.uint16)
         
-        # 归一化到0-255范围
-        array_normalized = (array.astype(np.float64) / 65535.0 * 255).astype(np.uint8)
+        if use_histogram_mapping:
+            # 使用直方图映射（推荐）
+            # 这会自动拉伸实际使用的值范围到0-255
+            array_display = apply_histogram_mapping(array)
+        else:
+            # 简单线性映射（可能导致图像过暗）
+            array_display = (array.astype(np.float64) / 65535.0 * 255).astype(np.uint8)
         
         bytes_per_line = width
-        qimage = QImage(array_normalized.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
+        qimage = QImage(array_display.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
     
     # 重要：复制数据以避免内存问题
     return qimage.copy()
