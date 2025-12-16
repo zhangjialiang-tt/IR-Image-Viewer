@@ -1,6 +1,6 @@
 """图像解析器
 
-负责将二进制数据解析为图像数据，支持不同的位深度、字节序和行偏移。
+负责将二进制数据解析为图像数据，支持不同的位深度、字节序和文件偏移。
 """
 
 import numpy as np
@@ -12,7 +12,7 @@ class ImageParser:
     """图像解析器
     
     将二进制数据解析为图像数据，支持8位和16位灰度图像，
-    可配置字节序和行偏移。
+    可配置字节序和文件偏移（从文件的第N个字节开始读取）。
     
     Attributes:
         config: 图像配置参数
@@ -56,8 +56,9 @@ class ImageParser:
                 f"帧索引 {frame_index} 超出范围 [0, {total_frames - 1}]"
             )
         
-        # 计算帧的起始位置（考虑行偏移）
-        frame_start = frame_index * frame_size + self.config.row_offset
+        # 计算帧的起始位置（考虑文件偏移）
+        # 文件偏移 + 帧索引 * 帧大小
+        frame_start = self.config.row_offset + frame_index * frame_size
         frame_end = frame_start + frame_size
         
         if frame_end > len(data):
@@ -114,7 +115,7 @@ class ImageParser:
         """
         frame_size = self.calculate_frame_size()
         
-        # 考虑行偏移后的可用数据大小
+        # 考虑文件偏移后的可用数据大小
         available_size = file_size - self.config.row_offset
         
         if available_size <= 0:
@@ -137,9 +138,9 @@ class ImageParser:
         if not is_valid:
             return False, error_msg
         
-        # 检查行偏移是否超出文件大小
+        # 检查文件偏移是否超出文件大小
         if self.config.row_offset >= file_size:
-            return False, f"行偏移量 {self.config.row_offset} 超出文件大小 {file_size}"
+            return False, f"文件偏移量 {self.config.row_offset} 超出文件大小 {file_size}"
         
         # 检查文件是否至少包含一帧完整图像
         frame_size = self.calculate_frame_size()

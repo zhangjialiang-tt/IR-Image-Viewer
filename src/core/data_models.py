@@ -19,13 +19,13 @@ class ImageConfig:
         height: 图像高度（像素）
         bit_depth: 位深度，8或16位
         endianness: 字节序，'little'（小端）或'big'（大端）
-        row_offset: 行偏移量（字节）
+        row_offset: 文件偏移量（字节），从文件的第N个字节开始读取数据
     """
     width: int = 640
     height: int = 512
     bit_depth: int = 8  # 8 or 16
     endianness: str = 'little'  # 'little' or 'big'
-    row_offset: int = 0
+    row_offset: int = 0  # file offset in bytes
     
     def validate(self) -> tuple[bool, str]:
         """验证配置参数的有效性
@@ -46,7 +46,7 @@ class ImageConfig:
             return False, "字节序必须为'little'或'big'"
         
         if self.row_offset < 0:
-            return False, "行偏移量不能为负数"
+            return False, "文件偏移量不能为负数"
         
         return True, ""
     

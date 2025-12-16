@@ -6,9 +6,10 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QComboBox, QRadioButton, QButtonGroup, QSpinBox,
-    QPushButton, QGroupBox
+    QPushButton, QGroupBox, QLineEdit, QDialog, QDialogButtonBox,
+    QFormLayout, QMessageBox
 )
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSignal, Qt
 
 
 class ControlPanel(QWidget):
@@ -20,7 +21,7 @@ class ControlPanel(QWidget):
         resolution_changed: 分辨率改变信号，参数为(width, height)
         bit_depth_changed: 位深度改变信号，参数为bit_depth (8或16)
         endianness_changed: 字节序改变信号，参数为endianness ('little'或'big')
-        row_offset_changed: 行偏移改变信号，参数为offset值
+        row_offset_changed: 文件偏移改变信号，参数为offset值（从文件的第N个字节开始读取）
         frame_changed: 帧索引改变信号，参数为frame_index
         play_clicked: 播放按钮点击信号
         pause_clicked: 暂停按钮点击信号
@@ -30,7 +31,7 @@ class ControlPanel(QWidget):
     resolution_changed = pyqtSignal(int, int)  # (width, height)
     bit_depth_changed = pyqtSignal(int)  # 8 or 16
     endianness_changed = pyqtSignal(str)  # 'little' or 'big'
-    row_offset_changed = pyqtSignal(int)  # offset value
+    row_offset_changed = pyqtSignal(int)  # file offset value (start reading from byte N)
     frame_changed = pyqtSignal(int)  # frame index
     play_clicked = pyqtSignal()
     pause_clicked = pyqtSignal()
@@ -53,6 +54,9 @@ class ControlPanel(QWidget):
             (1920, 1080),
         ]
         
+        # 自定义分辨率
+        self._custom_resolution = None
+        
         # 当前帧信息
         self._current_frame = 0
         self._total_frames = 1
@@ -71,11 +75,19 @@ class ControlPanel(QWidget):
         self.resolution_combo = QComboBox()
         for width, height in self._resolutions:
             self.resolution_combo.addItem(f"{width}×{height}", (width, height))
+        # 添加"自定义..."选项
+        self.resolution_combo.addItem("自定义...", None)
         # 默认选择640×512
         self.resolution_combo.setCurrentIndex(1)
         self.resolution_combo.currentIndexChanged.connect(self._on_resolution_changed)
         
         resolution_layout.addWidget(self.resolution_combo)
+        
+        # 添加自定义分辨率按钮（可选的替代方式）
+        self.custom_resolution_button = QPushButton("设置自定义分辨率...")
+        self.custom_resolution_button.clicked.connect(self._show_custom_resolution_dialog)
+        resolution_layout.addWidget(self.custom_resolution_button)
+        
         resolution_group.setLayout(resolution_layout)
         main_layout.addWidget(resolution_group)
         
@@ -117,20 +129,25 @@ class ControlPanel(QWidget):
         endianness_group.setLayout(endianness_layout)
         main_layout.addWidget(endianness_group)
         
-        # 4. 行偏移设置组
-        row_offset_group = QGroupBox("行偏移")
-        row_offset_layout = QVBoxLayout()
+        # 4. 文件偏移设置组（原"行偏移"）
+        file_offset_group = QGroupBox("文件偏移")
+        file_offset_layout = QVBoxLayout()
+        
+        # 添加说明标签
+        offset_info_label = QLabel("从文件的第N个字节开始读取")
+        offset_info_label.setStyleSheet("color: gray; font-size: 9pt;")
+        file_offset_layout.addWidget(offset_info_label)
         
         self.row_offset_spin = QSpinBox()
         self.row_offset_spin.setMinimum(0)
-        self.row_offset_spin.setMaximum(10000)
+        self.row_offset_spin.setMaximum(100000000)  # 增加最大值以支持大文件
         self.row_offset_spin.setValue(0)
         self.row_offset_spin.setSuffix(" 字节")
         self.row_offset_spin.valueChanged.connect(self._on_row_offset_changed)
         
-        row_offset_layout.addWidget(self.row_offset_spin)
-        row_offset_group.setLayout(row_offset_layout)
-        main_layout.addWidget(row_offset_group)
+        file_offset_layout.addWidget(self.row_offset_spin)
+        file_offset_group.setLayout(file_offset_layout)
+        main_layout.addWidget(file_offset_group)
         
         # 5. 帧控制组
         frame_control_group = QGroupBox("帧控制")
@@ -175,8 +192,64 @@ class ControlPanel(QWidget):
     
     def _on_resolution_changed(self, index: int) -> None:
         """分辨率改变时的处理函数"""
-        width, height = self.resolution_combo.currentData()
-        self.resolution_changed.emit(width, height)
+        data = self.resolution_combo.currentData()
+        
+        # 如果选择了"自定义..."选项
+        if data is None:
+            self._show_custom_resolution_dialog()
+        else:
+            width, height = data
+            self.resolution_changed.emit(width, height)
+    
+    def _show_custom_resolution_dialog(self) -> None:
+        """显示自定义分辨率对话框"""
+        dialog = CustomResolutionDialog(self)
+        
+        # 如果之前有自定义分辨率，使用它作为默认值
+        if self._custom_resolution:
+            dialog.set_resolution(*self._custom_resolution)
+        
+        if dialog.exec_() == QDialog.Accepted:
+            width, height = dialog.get_resolution()
+            self._custom_resolution = (width, height)
+            
+            # 更新下拉框
+            self._update_custom_resolution_in_combo(width, height)
+            
+            # 发送信号
+            self.resolution_changed.emit(width, height)
+        else:
+            # 用户取消，恢复到之前的选择
+            if self.resolution_combo.currentData() is None:
+                # 如果当前是"自定义..."，恢复到默认的640×512
+                self.resolution_combo.setCurrentIndex(1)
+    
+    def _update_custom_resolution_in_combo(self, width: int, height: int) -> None:
+        """更新下拉框中的自定义分辨率项
+        
+        Args:
+            width: 宽度
+            height: 高度
+        """
+        # 查找是否已经有自定义分辨率项
+        custom_index = -1
+        for i in range(self.resolution_combo.count()):
+            item_text = self.resolution_combo.itemText(i)
+            if item_text.startswith("自定义:"):
+                custom_index = i
+                break
+        
+        # 如果没有，在"自定义..."之前插入
+        if custom_index == -1:
+            custom_index = self.resolution_combo.count() - 1
+            self.resolution_combo.insertItem(custom_index, f"自定义: {width}×{height}", (width, height))
+        else:
+            # 更新现有项
+            self.resolution_combo.setItemText(custom_index, f"自定义: {width}×{height}")
+            self.resolution_combo.setItemData(custom_index, (width, height))
+        
+        # 选择自定义分辨率项
+        self.resolution_combo.setCurrentIndex(custom_index)
     
     def _on_bit_depth_changed(self) -> None:
         """位深度改变时的处理函数"""
@@ -191,7 +264,7 @@ class ControlPanel(QWidget):
             self.endianness_changed.emit('big')
     
     def _on_row_offset_changed(self, value: int) -> None:
-        """行偏移改变时的处理函数"""
+        """文件偏移改变时的处理函数"""
         self.row_offset_changed.emit(value)
     
     def _on_prev_frame(self) -> None:
@@ -265,10 +338,10 @@ class ControlPanel(QWidget):
         return 'little' if self.endianness_little.isChecked() else 'big'
     
     def get_row_offset(self) -> int:
-        """获取当前行偏移值
+        """获取当前文件偏移值
         
         Returns:
-            int: 行偏移量（字节）
+            int: 文件偏移量（字节），从文件的第N个字节开始读取
         """
         return self.row_offset_spin.value()
     
@@ -308,9 +381,111 @@ class ControlPanel(QWidget):
             self.endianness_big.setChecked(True)
     
     def set_row_offset(self, offset: int) -> None:
-        """设置行偏移
+        """设置文件偏移
         
         Args:
-            offset: 行偏移量（字节）
+            offset: 文件偏移量（字节）
         """
         self.row_offset_spin.setValue(offset)
+
+
+class CustomResolutionDialog(QDialog):
+    """自定义分辨率对话框
+    
+    允许用户输入任意的图像宽度和高度。
+    """
+    
+    def __init__(self, parent=None):
+        """初始化对话框
+        
+        Args:
+            parent: 父窗口部件
+        """
+        super().__init__(parent)
+        
+        self.setWindowTitle("自定义分辨率")
+        self.setModal(True)
+        
+        # 创建布局
+        layout = QVBoxLayout(self)
+        
+        # 创建表单布局
+        form_layout = QFormLayout()
+        
+        # 宽度输入
+        self.width_spin = QSpinBox()
+        self.width_spin.setMinimum(1)
+        self.width_spin.setMaximum(10000)
+        self.width_spin.setValue(640)
+        self.width_spin.setSuffix(" 像素")
+        form_layout.addRow("宽度:", self.width_spin)
+        
+        # 高度输入
+        self.height_spin = QSpinBox()
+        self.height_spin.setMinimum(1)
+        self.height_spin.setMaximum(10000)
+        self.height_spin.setValue(512)
+        self.height_spin.setSuffix(" 像素")
+        form_layout.addRow("高度:", self.height_spin)
+        
+        layout.addLayout(form_layout)
+        
+        # 添加说明
+        info_label = QLabel("请输入图像的宽度和高度（像素）")
+        info_label.setStyleSheet("color: gray; font-size: 9pt;")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+        
+        # 添加按钮
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        button_box.accepted.connect(self._validate_and_accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+        
+        # 设置对话框大小
+        self.setMinimumWidth(300)
+    
+    def _validate_and_accept(self) -> None:
+        """验证输入并接受对话框"""
+        width = self.width_spin.value()
+        height = self.height_spin.value()
+        
+        # 验证分辨率是否合理
+        if width < 1 or height < 1:
+            QMessageBox.warning(
+                self,
+                "无效的分辨率",
+                "宽度和高度必须大于0"
+            )
+            return
+        
+        if width > 10000 or height > 10000:
+            QMessageBox.warning(
+                self,
+                "分辨率过大",
+                "宽度和高度不能超过10000像素"
+            )
+            return
+        
+        # 验证通过，接受对话框
+        self.accept()
+    
+    def get_resolution(self) -> tuple[int, int]:
+        """获取用户输入的分辨率
+        
+        Returns:
+            tuple[int, int]: (width, height)
+        """
+        return (self.width_spin.value(), self.height_spin.value())
+    
+    def set_resolution(self, width: int, height: int) -> None:
+        """设置对话框中的分辨率值
+        
+        Args:
+            width: 宽度
+            height: 高度
+        """
+        self.width_spin.setValue(width)
+        self.height_spin.setValue(height)
