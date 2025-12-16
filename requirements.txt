@@ -1,0 +1,13 @@
+# IR Image Viewer Dependencies
+
+# GUI Framework
+PyQt5>=5.15.0
+
+# Numerical computing and image processing
+numpy>=1.19.0
+Pillow>=8.0.0
+
+# Testing frameworks
+pytest>=6.0.0
+hypothesis>=6.0.0
+pytest-qt>=4.0.0
