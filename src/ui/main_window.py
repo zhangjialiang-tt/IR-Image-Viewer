@@ -341,8 +341,8 @@ class IRImageViewer(QMainWindow):
             # 显示第一帧
             self._display_current_frame()
             
-            # 显示十六进制数据
-            self._hex_view.display_hex_data(self._current_data)
+            # 显示十六进制数据（只显示当前图像数据范围）
+            self._update_hex_view()
             
             # 更新状态栏
             self._update_file_info_display()
@@ -375,6 +375,42 @@ class IRImageViewer(QMainWindow):
             
         except Exception as e:
             error_msg = ErrorHandler.handle_parse_error(e, f"显示第{frame_index}帧")
+            self.show_error(error_msg)
+    
+    def _update_hex_view(self) -> None:
+        """更新十六进制视图
+        
+        只显示当前配置对应的图像数据范围（offset + image_length），
+        而不是整个文件。
+        """
+        if self._image_parser is None or self._current_data is None:
+            return
+        
+        try:
+            # 计算当前帧的数据范围
+            frame_size = self._image_parser.calculate_frame_size()
+            offset = self._current_config.row_offset
+            
+            # 获取当前帧索引
+            frame_index = 0
+            if self._frame_manager is not None:
+                frame_index = self._frame_manager.get_current_frame()
+            
+            # 计算起始和结束位置
+            start_pos = offset + frame_index * frame_size
+            end_pos = start_pos + frame_size
+            
+            # 确保不超出文件范围
+            end_pos = min(end_pos, len(self._current_data))
+            
+            # 提取当前帧的数据
+            frame_data = self._current_data[start_pos:end_pos]
+            
+            # 显示十六进制数据，使用实际的文件偏移量作为地址显示
+            self._hex_view.display_hex_data(frame_data, offset=start_pos)
+            
+        except Exception as e:
+            error_msg = ErrorHandler.handle_parse_error(e, "更新十六进制视图")
             self.show_error(error_msg)
     
     def _update_file_info_display(self) -> None:
@@ -565,6 +601,9 @@ class IRImageViewer(QMainWindow):
         
         # 显示新帧
         self._display_current_frame()
+        
+        # 更新十六进制视图（显示当前帧的数据）
+        self._update_hex_view()
     
     @pyqtSlot(int, int, int)
     def _on_pixel_info_changed(self, x: int, y: int, value: int) -> None:
@@ -574,7 +613,7 @@ class IRImageViewer(QMainWindow):
     def _reparse_image(self) -> None:
         """重新解析图像
         
-        当配置参数改变时，重新创建解析器并显示图像。
+        当配置参数改变时，重新创建解析器并显示图像和十六进制数据。
         """
         if self._current_data is None:
             return
@@ -615,6 +654,9 @@ class IRImageViewer(QMainWindow):
             
             # 显示当前帧
             self._display_current_frame()
+            
+            # 更新十六进制视图 - 只显示当前图像数据范围
+            self._update_hex_view()
             
             self.update_status("图像已重新解析")
             
