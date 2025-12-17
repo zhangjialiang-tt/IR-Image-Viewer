@@ -18,12 +18,14 @@ class ImageConfig:
         width: 图像宽度（像素）
         height: 图像高度（像素）
         bit_depth: 位深度，8或16位
+        is_signed: 是否为有符号数据（仅16位时有效）
         endianness: 字节序，'little'（小端）或'big'（大端）
         row_offset: 文件偏移量（字节），从文件的第N个字节开始读取数据
     """
     width: int = 640
     height: int = 512
     bit_depth: int = 8  # 8 or 16
+    is_signed: bool = False  # True for signed, False for unsigned (only for 16-bit)
     endianness: str = 'little'  # 'little' or 'big'
     row_offset: int = 0  # file offset in bytes
     

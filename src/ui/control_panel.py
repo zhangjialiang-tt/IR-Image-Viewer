@@ -30,6 +30,7 @@ class ControlPanel(QWidget):
     # 定义信号
     resolution_changed = pyqtSignal(int, int)  # (width, height)
     bit_depth_changed = pyqtSignal(int)  # 8 or 16
+    data_type_changed = pyqtSignal(bool)  # True for signed, False for unsigned (16-bit only)
     endianness_changed = pyqtSignal(str)  # 'little' or 'big'
     row_offset_changed = pyqtSignal(int)  # file offset value (start reading from byte N)
     frame_changed = pyqtSignal(int)  # frame index
@@ -109,6 +110,30 @@ class ControlPanel(QWidget):
         bit_depth_layout.addWidget(self.bit_depth_16)
         bit_depth_group.setLayout(bit_depth_layout)
         main_layout.addWidget(bit_depth_group)
+        
+        # 2.5. 数据类型设置组（仅16位时有效）
+        data_type_group = QGroupBox("数据类型 (16位)")
+        data_type_layout = QVBoxLayout()
+        
+        self.data_type_unsigned = QRadioButton("无符号 (0-65535)")
+        self.data_type_signed = QRadioButton("有符号 (-32768-32767)")
+        self.data_type_unsigned.setChecked(True)  # 默认无符号
+        
+        # 创建按钮组以确保互斥
+        self.data_type_group = QButtonGroup()
+        self.data_type_group.addButton(self.data_type_unsigned, 0)
+        self.data_type_group.addButton(self.data_type_signed, 1)
+        self.data_type_group.buttonClicked.connect(self._on_data_type_changed)
+        
+        data_type_layout.addWidget(self.data_type_unsigned)
+        data_type_layout.addWidget(self.data_type_signed)
+        data_type_group.setLayout(data_type_layout)
+        
+        # 初始状态：8位时禁用数据类型选择
+        data_type_group.setEnabled(False)
+        self.data_type_group_widget = data_type_group
+        
+        main_layout.addWidget(data_type_group)
         
         # 3. 字节序设置组
         endianness_group = QGroupBox("字节序")
@@ -254,7 +279,19 @@ class ControlPanel(QWidget):
     def _on_bit_depth_changed(self) -> None:
         """位深度改变时的处理函数"""
         bit_depth = self.bit_depth_group.checkedId()
+        
+        # 根据位深度启用/禁用数据类型选择
+        if bit_depth == 16:
+            self.data_type_group_widget.setEnabled(True)
+        else:  # 8位
+            self.data_type_group_widget.setEnabled(False)
+        
         self.bit_depth_changed.emit(bit_depth)
+    
+    def _on_data_type_changed(self) -> None:
+        """数据类型改变时的处理函数"""
+        is_signed = self.data_type_signed.isChecked()
+        self.data_type_changed.emit(is_signed)
     
     def _on_endianness_changed(self) -> None:
         """字节序改变时的处理函数"""
@@ -329,6 +366,14 @@ class ControlPanel(QWidget):
         """
         return self.bit_depth_group.checkedId()
     
+    def get_data_type(self) -> bool:
+        """获取当前选择的数据类型
+        
+        Returns:
+            bool: True表示有符号，False表示无符号
+        """
+        return self.data_type_signed.isChecked()
+    
     def get_endianness(self) -> str:
         """获取当前选择的字节序
         
@@ -366,8 +411,21 @@ class ControlPanel(QWidget):
         """
         if bit_depth == 8:
             self.bit_depth_8.setChecked(True)
+            self.data_type_group_widget.setEnabled(False)
         elif bit_depth == 16:
             self.bit_depth_16.setChecked(True)
+            self.data_type_group_widget.setEnabled(True)
+    
+    def set_data_type(self, is_signed: bool) -> None:
+        """设置数据类型
+        
+        Args:
+            is_signed: True表示有符号，False表示无符号
+        """
+        if is_signed:
+            self.data_type_signed.setChecked(True)
+        else:
+            self.data_type_unsigned.setChecked(True)
     
     def set_endianness(self, endianness: str) -> None:
         """设置字节序

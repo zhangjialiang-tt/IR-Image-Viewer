@@ -71,11 +71,15 @@ class ImageParser:
         
         # 根据位深度解析数据
         if self.config.bit_depth == 8:
-            # 8位数据：每个字节是一个像素
+            # 8位数据：每个字节是一个像素（总是无符号）
             pixel_array = np.frombuffer(frame_data, dtype=np.uint8)
         else:  # 16位
             # 16位数据：每两个字节是一个像素
-            dtype = np.dtype(np.uint16)
+            # 根据is_signed选择数据类型
+            if self.config.is_signed:
+                dtype = np.dtype(np.int16)  # 有符号16位整数 (-32768 到 32767)
+            else:
+                dtype = np.dtype(np.uint16)  # 无符号16位整数 (0 到 65535)
             
             # 设置字节序
             if self.config.endianness == 'big':

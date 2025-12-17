@@ -271,6 +271,7 @@ class IRImageViewer(QMainWindow):
         """连接控制面板信号到处理函数"""
         self._control_panel.resolution_changed.connect(self._on_resolution_changed)
         self._control_panel.bit_depth_changed.connect(self._on_bit_depth_changed)
+        self._control_panel.data_type_changed.connect(self._on_data_type_changed)
         self._control_panel.endianness_changed.connect(self._on_endianness_changed)
         self._control_panel.row_offset_changed.connect(self._on_row_offset_changed)
         self._control_panel.frame_changed.connect(self._on_frame_changed)
@@ -568,6 +569,12 @@ class IRImageViewer(QMainWindow):
     def _on_bit_depth_changed(self, bit_depth: int) -> None:
         """位深度改变处理"""
         self._current_config.bit_depth = bit_depth
+        self._reparse_image()
+    
+    @pyqtSlot(bool)
+    def _on_data_type_changed(self, is_signed: bool) -> None:
+        """数据类型改变处理"""
+        self._current_config.is_signed = is_signed
         self._reparse_image()
     
     @pyqtSlot(str)
