@@ -12,10 +12,12 @@ from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtGui import QIcon
 from typing import Optional
 import os
+import numpy as np
 
 from .control_panel import ControlPanel
 from .image_view import ImageView
 from .hex_view import HexView
+from .histogram_view import HistogramView
 from ..core.file_loader import FileLoader
 from ..core.image_parser import ImageParser
 from ..core.frame_manager import FrameManager
@@ -55,6 +57,7 @@ class IRImageViewer(QMainWindow):
         self._control_panel: Optional[ControlPanel] = None
         self._image_view: Optional[ImageView] = None
         self._hex_view: Optional[HexView] = None
+        self._histogram_view: Optional[HistogramView] = None
         self._tab_widget: Optional[QTabWidget] = None
         
         # 设置窗口
@@ -259,6 +262,10 @@ class IRImageViewer(QMainWindow):
         self._hex_view = HexView()
         self._tab_widget.addTab(self._hex_view, "十六进制视图")
         
+        # 直方图视图标签页
+        self._histogram_view = HistogramView()
+        self._tab_widget.addTab(self._histogram_view, "直方图")
+        
         main_layout.addWidget(self._tab_widget, 1)  # 标签页占据剩余空间
         
         # 连接控制面板信号
@@ -374,8 +381,33 @@ class IRImageViewer(QMainWindow):
             # 显示图像
             self._image_view.display_image(image_data, self._current_config.bit_depth)
             
+            # 更新直方图
+            self._update_histogram(image_data)
+            
         except Exception as e:
             error_msg = ErrorHandler.handle_parse_error(e, f"显示第{frame_index}帧")
+            self.show_error(error_msg)
+    
+    def _update_histogram(self, image_data: np.ndarray) -> None:
+        """更新直方图视图
+        
+        显示当前帧的像素值分布直方图。
+        
+        Args:
+            image_data: 当前帧的图像数据
+        """
+        if self._histogram_view is None:
+            return
+        
+        try:
+            # 显示直方图
+            self._histogram_view.display_histogram(
+                image_data, 
+                self._current_config.bit_depth,
+                self._current_config.is_signed
+            )
+        except Exception as e:
+            error_msg = ErrorHandler.handle_parse_error(e, "更新直方图")
             self.show_error(error_msg)
     
     def _update_hex_view(self) -> None:
